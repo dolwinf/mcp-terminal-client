@@ -58,6 +58,20 @@ Defines available MCP servers:
 
 ## Usage
 
+Ensure uv is installed to installed packages:
+
+```bash
+pip install uv
+```
+Create virtual env and install dependencies:
+
+```bash
+source .venv/bin/activate # Unix/macOS
+# OR
+.venv\Scripts\activate  # Windows
+uv pip install --requirement pyproject.toml
+```
+
 Run the client with default configuration files:
 
 ```bash
