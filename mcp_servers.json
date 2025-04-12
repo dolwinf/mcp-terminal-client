@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "neo4j": {
+      "command": "uvx",
+      "args": [
+        "mcp-neo4j-memory",
+        "--db-url",
+        "bolt://localhost:7687"        
+      ]
+    }
+  }
+}

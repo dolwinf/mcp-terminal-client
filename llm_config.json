@@ -1,0 +1,6 @@
+{
+    "name": "Claude",
+    "provider": "anthropic",
+    "api_key": "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",
+    "model": "claude-3-haiku-20240307"
+  }
