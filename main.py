@@ -3,22 +3,16 @@ import json
 import logging
 import anyio
 import anthropic
-# Assuming these base classes exist
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-# Make sure necessary types are imported if they exist in your library, e.g.:
-# from mcp.types import Tool, ListToolsResult, CallToolResult, ContentBlock
 
 # --- Logging Setup ---
-# Increased logging level to capture DEBUG messages added for diagnosis
+# Increased logging level to capture DEBUG messages added for troubleshooting
 logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG to see all added logs
+    level=logging.DEBUG,
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
-# Optionally, reduce verbosity of libraries if needed
-# logging.getLogger("httpx").setLevel(logging.WARNING)
-# logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 logger = logging.getLogger("enhanced_mcp_client")
 
@@ -77,19 +71,18 @@ async def query_llm(client: anthropic.AsyncAnthropic, model: str, messages: list
     """Sends messages to the Anthropic API and returns the response."""
     logger.info("--- Sending Request to LLM ---")
     logger.info(f"Model: {model}")
-    # Log the full messages structure right before sending
-    # Use DEBUG level for potentially large payload
+
     logger.debug("Messages Payload:")
     try:
-        # Use json.dumps for pretty printing the potentially complex messages structure
+
         messages_json = json.dumps(messages, indent=2)
         logger.debug(messages_json)
     except Exception as log_e:
         logger.error(f"Could not serialize messages for logging: {log_e}")
-        # Log raw if serialization fails
+
         logger.debug(f"Messages raw (might be large/complex): {messages}")
 
-    logger.debug("Tools Payload:")  # Log tools as well
+    logger.debug("Tools Payload:")
     try:
         tools_json = json.dumps(processed_tools, indent=2)
         logger.debug(tools_json)
@@ -105,15 +98,15 @@ async def query_llm(client: anthropic.AsyncAnthropic, model: str, messages: list
             messages=messages,
             tools=processed_tools
         )
-        # Log successful response at DEBUG
+
         logger.debug("LLM Raw Response: %s", response)
         return response
     except anthropic.BadRequestError as e:
         logger.error("--- LLM BadRequestError ---")
         logger.error(f"Status Code: {e.status_code}")
-        # Log the detailed error body provided by Anthropic
+
         logger.error(f"Error Body: {e.body}")
-        # Log the request that failed again, for direct comparison
+
         logger.error("Messages Payload that caused error:")
         try:
             messages_json_error = json.dumps(messages, indent=2)
@@ -123,39 +116,39 @@ async def query_llm(client: anthropic.AsyncAnthropic, model: str, messages: list
                 f"Could not serialize messages for error logging: {log_e}")
             logger.error(f"Messages raw: {messages}")
         logger.error("--- End LLM BadRequestError ---")
-        raise e  # Re-raise the exception to be caught by the outer handler in run_session
+        raise e
     except anthropic.APIConnectionError as e:
         logger.exception("LLM API Connection Error: %s", e)
-        raise  # Re-raise
+        raise
     except anthropic.RateLimitError as e:
         logger.exception("LLM Rate Limit Error: %s", e)
-        raise  # Re-raise
+        raise
     except anthropic.AuthenticationError as e:
         logger.exception("LLM Authentication Error: %s", e)
-        raise  # Re-raise
+        raise
     except Exception as e:  # Catch other potential API errors
         logger.exception(
             "An unexpected error occurred during LLM API call: %s", e)
-        raise  # Re-raise
+        raise
 
 
 # --- User Input ---
 async def get_user_input():
     """Gets user input asynchronously."""
-    # anyio.to_thread.run_sync handles blocking input in async context
+
     return await anyio.to_thread.run_sync(input)
 
-# --- Main Session Logic (with enhanced logging) ---
+# --- Main Session Logic  ---
 
 
 async def run_session(session: ClientSession, llm_config: dict):
-    """Runs the main chat loop, interacting with MCP and LLM."""
+    """Run the main chat loop, interacting with MCP and LLM."""
     try:
         logger.info("Initializing MCP session...")
         await session.initialize()
 
         logger.info("Listing tools from MCP server...")
-        # Assuming ListToolsResult has a 'tools' attribute which is a list
+
         results = await session.list_tools()
 
         if not results or not hasattr(results, 'tools') or not results.tools:
@@ -165,12 +158,12 @@ async def run_session(session: ClientSession, llm_config: dict):
 
         # Prepare tools for Claude API format
         processed_tools = []
-        tool_map = {}  # For easy lookup later
+        tool_map = {}
         logger.debug("Raw tools listed: %s", results.tools)
         for tool in results.tools:
-            # Adjust based on actual 'tool' object structure and serialization method
+
             try:
-                # Use model_dump() for Pydantic v2+, dict() for v1
+
                 if hasattr(tool, 'model_dump'):
                     raw_tool = tool.model_dump()
                 elif hasattr(tool, 'dict'):
@@ -186,10 +179,10 @@ async def run_session(session: ClientSession, llm_config: dict):
 
                 # Check if schema exists and is a dict
                 if isinstance(input_schema, dict) and input_schema:
-                    # Add back with correct key name
+
                     raw_tool["input_schema"] = input_schema
                     processed_tools.append(raw_tool)
-                    # Store for potential validation later
+
                     tool_map[tool_name] = raw_tool
                     logger.debug("Processed tool '%s' for LLM.", tool_name)
                 else:
@@ -210,11 +203,10 @@ async def run_session(session: ClientSession, llm_config: dict):
         logger.info("Tools prepared for LLM: %s", [
                     t['name'] for t in processed_tools])
 
-        # Initialize Anthropic client
         try:
             client = anthropic.AsyncAnthropic(api_key=llm_config["api_key"])
             model = llm_config.get(
-                "model", "claude-3-haiku-20240307")  # Default model
+                "model", "claude-3-haiku-20240307")
             logger.info("Anthropic client initialized for model: %s", model)
         except Exception as e:
             logger.exception("Failed to initialize Anthropic client: %s", e)
@@ -222,30 +214,30 @@ async def run_session(session: ClientSession, llm_config: dict):
                 f"🚨 Error: Could not initialize LLM client. Check API key and configuration. {e}")
             return
 
-        conversation_history = []  # Stores the turn-by-turn history
+        conversation_history = []
 
         print("\n💬 Chat started! Type 'exit' or 'quit' to leave.\n")
 
         while True:
             print("You: ", end="", flush=True)
             user_input_raw = await get_user_input()
-            user_query = user_input_raw.strip()  # Strip whitespace
+            user_query = user_input_raw.strip()
 
             if user_query.lower() in {"exit", "quit"}:
                 print("\n👋 Exiting chat.")
                 break
 
-            if not user_query:  # Skip empty input
+            if not user_query:
                 continue
 
-            # Add user message to the history list that will be sent to the API
+            # Add user message to the history list that will be sent to the API. Need to revisit
             conversation_history.append(
                 {"role": "user", "content": user_query})
 
-            # --- LLM Interaction Loop ---
-            while True:  # Inner loop to handle potential tool calls
-                # Prepare messages for the current API call from history
-                messages_to_send = conversation_history  # Send the whole history
+            # --- Start LLM loop ---
+            while True:
+
+                messages_to_send = conversation_history  # Send whole history
 
                 try:
                     logger.info("Querying LLM (turn %d)...",
@@ -253,37 +245,36 @@ async def run_session(session: ClientSession, llm_config: dict):
                     response = await query_llm(client, model, messages_to_send, processed_tools)
 
                 except anthropic.BadRequestError as e:
-                    # Error logged in query_llm, print user message here
+
                     print(
                         f"🚨 Error: Invalid request sent to LLM. Check logs for details. {e}")
-                    # Break inner loop, potentially allowing user to rephrase or fix context
+
                     break
                 except (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.AuthenticationError) as e:
-                    # Specific API errors logged in query_llm
+
                     print(f"🚨 Error: LLM API issue. Check logs. {e}")
-                    # Decide how to handle: break outer loop, retry, etc.
+
                     if isinstance(e, anthropic.AuthenticationError):
-                        return  # Fatal
-                    break  # Break inner loop for others
-                except Exception as e:  # Catch other potential API or processing errors
+                        return
+                    break
+                except Exception as e:
                     logger.exception(
                         "An unexpected error occurred during LLM query or response processing: %s", e)
                     print(f"🚨 An unexpected error occurred: {e}")
-                    break  # Break inner loop
+                    break
 
-                # Process the response
-                # Raw content blocks for the assistant's turn in history
+                # Raw content blocks for the assistant's turn in history. Need to revisit
                 assistant_response_content_blocks = []
-                tool_calls_to_make = []  # Collect tool calls requested by the model
-                final_text_parts = []  # Collect text parts from the response
+                tool_calls_to_make = []
+                final_text_parts = []
 
                 if not response or not response.content:
                     logger.warning("Received empty or null content from LLM.")
                     print("🤖 Claude: (Received empty response)")
-                    break  # Break inner loop, user can try again
+                    break
 
                 logger.debug("Processing LLM response content blocks...")
-                # Iterate through content blocks (text or tool_use)
+
                 for i, block in enumerate(response.content):
                     logger.debug(f"Response block {i}: type={block.type}")
                     if block.type == "text":
@@ -307,14 +298,13 @@ async def run_session(session: ClientSession, llm_config: dict):
                                 block.model_dump())
                         else:
                             assistant_response_content_blocks.append(
-                                block.dict())  # Fallback for Pydantic v1
+                                block.dict())
                     else:
                         logger.warning(
                             "Received unknown block type from LLM: %s", block.type)
 
-                # --- Handle Tool Calls (if any) ---
                 if tool_calls_to_make:
-                    # Add the assistant's turn (requesting the tool) to conversation history *before* adding tool results
+
                     if assistant_response_content_blocks:
                         logger.debug(
                             "Appending assistant message (with tool requests) to history.")
@@ -325,7 +315,7 @@ async def run_session(session: ClientSession, llm_config: dict):
 
                     logger.info(
                         f"LLM requested {len(tool_calls_to_make)} tool call(s).")
-                    # Content blocks for the *next* user message reporting results
+
                     tool_result_messages = []
 
                     for tool_call in tool_calls_to_make:
@@ -335,9 +325,9 @@ async def run_session(session: ClientSession, llm_config: dict):
 
                         logger.info(
                             "Calling tool '%s' via MCP with input: %s", tool_name, tool_input)
-                        text_output = None  # Initialize
-                        tool_output_content = None  # Initialize
-                        is_error_flag = False  # Initialize
+                        text_output = None
+                        tool_output_content = None
+                        is_error_flag = False
 
                         try:
                             # Call the actual tool via MCP session
@@ -345,7 +335,6 @@ async def run_session(session: ClientSession, llm_config: dict):
                             logger.debug(
                                 "MCP Tool Raw Result for '%s': %s", tool_name, mcp_tool_result)
 
-                            # Process the result (assuming CallToolResult structure)
                             # Adapt this based on the actual structure of mcp_tool_result
                             if not mcp_tool_result or not hasattr(mcp_tool_result, 'content') or \
                                not mcp_tool_result.content or len(mcp_tool_result.content) == 0 or \
@@ -361,40 +350,38 @@ async def run_session(session: ClientSession, llm_config: dict):
                                     "Tool '%s' Raw Text Output: <<< %s >>>", tool_name, text_output)
 
                                 try:
-                                    # Attempt to parse as JSON - THIS IS THE KEY
+
                                     parsed_output = json.loads(text_output)
-                                    tool_output_content = parsed_output  # Use the parsed dictionary
+                                    tool_output_content = parsed_output
                                     is_error_flag = False
                                     logger.info(
                                         "Tool '%s' output successfully parsed as JSON.", tool_name)
                                 except json.JSONDecodeError:
                                     logger.warning(
                                         f"Tool '{tool_name}' output was not valid JSON. Reporting structured error. Raw: '{text_output}'")
-                                    # Report a structured error back to the LLM
+
                                     tool_output_content = {
                                         "error": "Tool execution resulted in non-JSON output.",
-                                        # "raw_output": text_output # Optional: include raw output if helpful and safe
+
                                     }
                                     is_error_flag = True
 
                         except Exception as e:
-                            # Catch errors during MCP call or result processing
+
                             logger.exception(
                                 "Error calling or processing MCP tool '%s': %s", tool_name, e)
                             tool_output_content = {
                                 "error": f"Failed to execute or process tool '{tool_name}': {str(e)}"}
                             is_error_flag = True
 
-                        # Construct the tool_result message content block for Anthropic
                         tool_result_block = {
                             "type": "tool_result",
                             "tool_use_id": tool_use_id,
-                            "output": tool_output_content,  # Contains parsed JSON dict OR error dict
+                            "output": tool_output_content,
                         }
                         if is_error_flag:
                             tool_result_block["is_error"] = True
 
-                        # +++ DETAILED LOGGING OF THE BLOCK BEING PREPARED +++
                         logger.debug(
                             "-----------------------------------------")
                         logger.debug("Preparing Tool Result Block for LLM:")
@@ -404,16 +391,16 @@ async def run_session(session: ClientSession, llm_config: dict):
                         logger.debug(
                             f"  Output Content Type: {type(tool_output_content)}")
                         try:
-                            # Try logging as pretty JSON if it's dict/list, else log raw
+
                             output_log_str = json.dumps(
                                 tool_output_content, indent=2)
                         except TypeError:
-                            # Use repr for non-serializable types
+
                             output_log_str = repr(tool_output_content)
                         logger.debug(
                             f"  Output Content Value:\n{output_log_str}")
                         try:
-                            # Log the final block as JSON
+
                             block_log_str = json.dumps(
                                 tool_result_block, indent=2)
                         except TypeError:
@@ -422,19 +409,17 @@ async def run_session(session: ClientSession, llm_config: dict):
                             f"  Complete tool_result_block:\n{block_log_str}")
                         logger.debug(
                             "-----------------------------------------")
-                        # +++ END OF DETAILED LOGGING +++
 
                         # Add this tool result block to the list for the next user message
                         tool_result_messages.append(tool_result_block)
-                        # --- End loop for single tool call ---
 
                     # Add a single user message containing *all* the tool results back to the history
                     if tool_result_messages:
                         user_tool_response_message = {
                             "role": "user",
-                            "content": tool_result_messages  # List of tool result blocks
+                            "content": tool_result_messages
                         }
-                        # +++ Log the message being added to history +++
+
                         logger.debug(
                             "Adding User message with tool results to history:")
                         try:
@@ -442,26 +427,25 @@ async def run_session(session: ClientSession, llm_config: dict):
                                 f"{json.dumps(user_tool_response_message, indent=2)}")
                         except TypeError:
                             logger.debug(f"{repr(user_tool_response_message)}")
-                        # +++ End log +++
+
                         conversation_history.append(user_tool_response_message)
 
-                    # Continue the inner loop to send the tool results back to the LLM
                     logger.info("Re-querying LLM with tool results.")
-                    continue  # Go back to query_llm with the updated history
+                    continue
 
-                # --- Handle Text Response (if no tool calls were made in *this* response) ---
                 else:
                     logger.debug("No tool calls requested in this response.")
                     final_text = "\n".join(final_text_parts).strip()
                     if final_text:
                         print(f"🤖 Claude: {final_text}")
                         # Add the final assistant text response to conversation history
+                        # Revisit to fix bug
                         if assistant_response_content_blocks:
                             logger.debug(
                                 "Appending final assistant text message to history.")
                             conversation_history.append({
                                 "role": "assistant",
-                                "content": assistant_response_content_blocks  # Use the structured content
+                                "content": assistant_response_content_blocks
                             })
                     else:
                         # This might happen if the LLM responds only with tool use requests
@@ -476,7 +460,6 @@ async def run_session(session: ClientSession, llm_config: dict):
                     logger.debug("Breaking inner LLM loop.")
                     break
 
-            # --- End of Inner LLM Interaction Loop ---
             logger.debug("Exited inner LLM loop.")
 
     except ConnectionRefusedError as e:
@@ -489,15 +472,13 @@ async def run_session(session: ClientSession, llm_config: dict):
         print(
             f"🚨 Error: The command to start the MCP server was not found. Check config. {e}")
     except Exception as e:
-        # Catch errors during session initialization or the outer loop
+
         logger.exception("Unhandled error during session run: %s", e)
         print(f"⚠️ An unexpected session error occurred: {e}")
     finally:
         logger.info("MCP session finished or encountered an error.")
-        # Cleanup logic for the session could go here if needed
 
 
-# --- Main Execution ---
 async def main():
     """Parses arguments, loads config, and starts the MCP client session."""
     parser = argparse.ArgumentParser(
@@ -548,7 +529,6 @@ async def main():
             logger.debug("stdio params: command=%s, args=%s",
                          command, server_config.get("args", []))
 
-            # Use stdio_client context manager for reliable process management
             async with stdio_client(params) as (read_stream, write_stream):
                 logger.info(
                     "stdio streams established for '%s'. Initializing ClientSession...", server_name)
@@ -557,8 +537,8 @@ async def main():
                         "MCP ClientSession connected to server '%s'. Starting chat run...", server_name)
                     connected_server_name = server_name
                     await run_session(session, llm_config)
-                    # Session completed normally for this server
-                    break  # Exit loop after successful connection and session run
+
+                    break
 
         except ConnectionRefusedError as e:
             logger.warning(
@@ -567,12 +547,11 @@ async def main():
             logger.warning("Command not found for server '%s': '%s'. Check command path.",
                            server_name, command, exc_info=True)
         except Exception as e:
-            # Catch broader errors during connection/session setup
+
             logger.warning(
-                # Log stack trace
+
                 "Failed to connect or run session with server '%s': %s.", server_name, e, exc_info=True
             )
-        # Automatically cleans up stdio_client and ClientSession contexts here
 
     if not connected_server_name:
         logger.error(
@@ -586,7 +565,6 @@ async def main():
 if __name__ == "__main__":
     try:
 
-        # logging.getLogger('anyio').setLevel(logging.WARNING)
         anyio.run(main)
     except KeyboardInterrupt:
         logger.info("Client terminated by user (KeyboardInterrupt).")
