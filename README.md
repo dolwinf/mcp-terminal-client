@@ -1,6 +1,6 @@
 # MCP Terminal Client
 
-A client for interacting with Model Control Protocol (MCP) servers, integrated with the Anthropic Claude API for enhanced LLM capabilities.
+A terminal chat MCP client for interacting with Model Context Protocol (MCP) servers. Currently supports Anthropic Claude.
 
 ## Overview
 
