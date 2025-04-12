@@ -61,13 +61,13 @@ Defines available MCP servers:
 Run the client with default configuration files:
 
 ```bash
-python enhanced_mcp_client.py
+python main.py
 ```
 
 Specify custom configuration paths:
 
 ```bash
-python enhanced_mcp_client.py --llm_config custom_llm_config.json --mcp_config custom_mcp_servers.json
+python main.py --llm_config custom_llm_config.json --mcp_config custom_mcp_servers.json
 ```
 
 ## Features
