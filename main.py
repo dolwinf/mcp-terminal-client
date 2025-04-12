@@ -585,13 +585,13 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        # Set high-level logger for anyio if it's too noisy
+
         # logging.getLogger('anyio').setLevel(logging.WARNING)
         anyio.run(main)
     except KeyboardInterrupt:
         logger.info("Client terminated by user (KeyboardInterrupt).")
         print("\n👋 Client terminated.")
     except Exception as e:
-        # Catch any unexpected errors from the top level
+
         logger.critical("Fatal error in main execution: %s", e, exc_info=True)
         print(f"\n🚨 A critical error occurred: {e}")
