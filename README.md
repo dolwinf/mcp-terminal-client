@@ -105,6 +105,29 @@ python main.py --llm_config custom_llm_config.json --mcp_config custom_mcp_serve
 
 ---
 
+## 📎 File Attachments
+
+You can attach **PDF** and **image** files (`.png`, `.jpg`, `.webp`) to your prompt using the `--file` flag.
+
+These files will be sent to Claude along with your message using base64 encoding and the correct MIME type.
+
+### 🖼️ Supported Types
+
+- `application/pdf`
+- `image/png`
+- `image/jpeg`
+- `image/webp`
+
+---
+
+### 📁 Example Usage
+
+```bash
+python main.py --file ./sample.pdf
+```
+
+---
+
 ## 🛠 Tool Handling
 
 - Tools are discovered via `tools/list`
