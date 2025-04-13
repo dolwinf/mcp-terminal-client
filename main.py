@@ -3,6 +3,7 @@ import json
 import logging
 import anyio
 import os
+import sys
 import anthropic
 from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
@@ -14,6 +15,10 @@ from rich import print as rprint
 import traceback
 from pydantic import BaseModel, model_validator, TypeAdapter
 from typing import Literal, Union
+
+# Need to revisit to gracefully handle exists in Windows
+if os.name == "nt":
+    sys.stderr = open(os.devnull, "w")
 
 load_dotenv()
 
@@ -114,7 +119,6 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
 
         if user_query.lower() in {"exit", "quit"}:
             console.print("\n[bold cyan]\U0001F44B Exiting chat.[/bold cyan]")
-            await session.shutdown()
             break
 
         if not user_query:
