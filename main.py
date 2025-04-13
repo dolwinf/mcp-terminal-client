@@ -8,6 +8,10 @@ from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from jsonschema import validate, ValidationError
+from rich.console import Console
+from rich.syntax import Syntax
+from rich import print as rprint
+import traceback
 
 load_dotenv()
 
@@ -18,9 +22,13 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("python_mcp_client")
+console = Console()
 
 
 async def run_session(session: ClientSession, llm_config: dict):
+    console.print(
+        "[bold cyan]\n💬 Chat started! Type 'exit' or 'quit' to leave.\n[/bold cyan]")
+
     logger.info("Initializing MCP session...")
     await session.initialize()
 
@@ -28,8 +36,8 @@ async def run_session(session: ClientSession, llm_config: dict):
     results = await session.list_tools()
 
     if not results or not hasattr(results, 'tools') or not results.tools:
-        logger.error(
-            "No tools found on the MCP server or results format unexpected. Cannot proceed.")
+        console.print(
+            "[bold red]❌ No tools found on the MCP server or results format unexpected. Cannot proceed.[/bold red]")
         return
 
     processed_tools = []
@@ -47,27 +55,28 @@ async def run_session(session: ClientSession, llm_config: dict):
             logger.warning("Skipping tool due to error: %s", e)
 
     if not processed_tools:
-        logger.error("No valid tools to process. Exiting.")
+        console.print(
+            "[bold red]❌ No valid tools to process. Exiting.[/bold red]")
         return
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        logger.error("Missing ANTHROPIC_API_KEY environment variable.")
+        console.print(
+            "[bold red]❌ Missing ANTHROPIC_API_KEY environment variable.[/bold red]")
         return
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
     model = llm_config.get("model", "claude-3-haiku-20240307")
     conversation_history = []
 
-    print("\n💬 Chat started! Type 'exit' or 'quit' to leave.\n")
-
     while True:
-        print("You: ", end="", flush=True)
+        # Using raw print to avoid Rich error
+        print("\033[1;35mYou:\033[0m ", end="", flush=True)
         user_input_raw = await anyio.to_thread.run_sync(input)
         user_query = user_input_raw.strip()
 
         if user_query.lower() in {"exit", "quit"}:
-            print("\n👋 Exiting chat.")
+            console.print("\n[bold cyan]👋 Exiting chat.[/bold cyan]")
             break
 
         if not user_query:
@@ -84,7 +93,8 @@ async def run_session(session: ClientSession, llm_config: dict):
                     tools=processed_tools
                 )
             except Exception as e:
-                logger.error("LLM request failed: %s", e)
+                console.print(
+                    f"[bold red]❌ LLM request failed:[/bold red] {e}")
                 break
 
             assistant_response_content_blocks = []
@@ -92,7 +102,8 @@ async def run_session(session: ClientSession, llm_config: dict):
             final_text_parts = []
 
             if not response or not response.content:
-                logger.warning("Empty response from LLM.")
+                console.print(
+                    "[bold red]⚠️ Empty response from LLM.[/bold red]")
                 break
 
             for block in response.content:
@@ -119,8 +130,8 @@ async def run_session(session: ClientSession, llm_config: dict):
                     tool_input = tool_call["input"]
                     tool_use_id = tool_call["id"]
 
-                    logger.info("Calling tool '%s' with input: %s",
-                                tool_name, tool_input)
+                    console.print(
+                        f"[bold yellow]🔧 Calling tool '{tool_name}' with input:[/bold yellow] {tool_input}")
                     text_output = None
                     tool_output_content = None
                     is_error_flag = False
@@ -161,10 +172,13 @@ async def run_session(session: ClientSession, llm_config: dict):
                             "content": f"Tool execution failed: {str(tool_output_content.get('error', 'Unknown error'))}"
                         }
                     else:
+                        json_str = json.dumps(tool_output_content, indent=2)
+                        console.print(
+                            Syntax(json_str, "json", theme="monokai", line_numbers=True))
                         result_block = {
                             "type": "tool_result",
                             "tool_use_id": tool_use_id,
-                            "content": json.dumps(tool_output_content)
+                            "content": json_str
                         }
 
                     tool_result_messages.append(result_block)
@@ -174,7 +188,8 @@ async def run_session(session: ClientSession, llm_config: dict):
                 continue  # Re-query LLM with tool results
             else:
                 if final_text_parts:
-                    print(f"🤖 Claude: {' '.join(final_text_parts)}")
+                    console.print(
+                        f"[bold green]🤖 Claude:[/bold green] {' '.join(final_text_parts)}")
                     conversation_history.append(
                         {"role": "assistant", "content": assistant_response_content_blocks})
                 break
@@ -192,7 +207,8 @@ async def main():
         with open(args.mcp_config, "r") as f:
             mcp_config = json.load(f)
     except Exception as e:
-        logger.error("Failed to load config files: %s", e)
+        console.print(
+            f"[bold red]❌ Failed to load config files:[/bold red] {e}")
         return
 
     mcp_servers = mcp_config.get("mcpServers", {})
@@ -208,11 +224,16 @@ async def main():
                     await run_session(session, llm_config)
                     break
         except Exception as e:
-            logger.error("Failed to start session with '%s': %s",
-                         server_name, e)
+            console.print(
+                f"[bold red]❌ Failed to start session with '{server_name}':[/bold red] {e}")
+            traceback.print_exc()
+
 
 if __name__ == "__main__":
     try:
         anyio.run(main)
-    except KeyboardInterrupt:
-        logger.info("Client terminated by user.")
+    except* Exception as eg:
+        console.print(
+            "[bold red]\n🚨 Unhandled exception(s) occurred:[/bold red]")
+        for ex in eg.exceptions:
+            console.print(f"[red]- {type(ex).__name__}: {ex}[/red]")
