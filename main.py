@@ -5,6 +5,8 @@ import anyio
 import os
 import sys
 import anthropic
+import base64
+import mimetypes
 from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -16,7 +18,6 @@ import traceback
 from pydantic import BaseModel, model_validator, TypeAdapter
 from typing import Literal, Union
 
-# Need to revisit to gracefully handle exists in Windows
 if os.name == "nt":
     sys.stderr = open(os.devnull, "w")
 
@@ -30,6 +31,13 @@ logging.basicConfig(
 
 logger = logging.getLogger("python_mcp_client")
 console = Console()
+
+SUPPORTED_FILE_TYPES = {
+    "application/pdf": "document",
+    "image/png": "image",
+    "image/jpeg": "image",
+    "image/webp": "image"
+}
 
 
 class BaseLLMConfig(BaseModel):
@@ -60,9 +68,9 @@ class VertexAnthropicConfig(BaseLLMConfig):
 LLMConfig = Union[AnthropicConfig, VertexAnthropicConfig]
 
 
-async def run_session(session: ClientSession, llm_config: LLMConfig):
+async def run_session(session: ClientSession, llm_config: LLMConfig, args):
     console.print(
-        "[bold cyan]\n\U0001F4AC Chat started! Type 'exit' or 'quit' to leave.\n[/bold cyan]")
+        "\n[bold cyan]💬 Chat started! Type 'exit' or 'quit' to leave.[/bold cyan]")
 
     logger.info("Initializing MCP session...")
     await session.initialize()
@@ -72,7 +80,7 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
 
     if not results or not hasattr(results, 'tools') or not results.tools:
         console.print(
-            "[bold red]\u274C No tools found on the MCP server or results format unexpected. Cannot proceed.[/bold red]")
+            "[bold red]❌ No tools found on the MCP server or results format unexpected. Cannot proceed.[/bold red]")
         return
 
     processed_tools = []
@@ -91,14 +99,13 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
 
     if not processed_tools:
         console.print(
-            "[bold red]\u274C No valid tools to process. Exiting.[/bold red]")
+            "[bold red]❌ No valid tools to process. Exiting.[/bold red]")
         return
 
     if llm_config.provider == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            console.print(
-                "[bold red]\u274C Missing ANTHROPIC_API_KEY.[/bold red]")
+            console.print("[bold red]❌ Missing ANTHROPIC_API_KEY.[/bold red]")
             return
         client = anthropic.AsyncAnthropic(api_key=api_key)
 
@@ -112,19 +119,57 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
     model = llm_config.model
     conversation_history = []
 
+    file_attachment = None
+    if args.file:
+        file_path = args.file
+        if not os.path.isfile(file_path):
+            console.print(
+                f"[bold red]❌ File not found: {file_path}[/bold red]")
+            return
+
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type or mime_type not in SUPPORTED_FILE_TYPES:
+            console.print(
+                f"[bold red]❌ Unsupported file type: {mime_type or 'unknown'}[/bold red]\n"
+                "Supported types: PDF, PNG, JPG, WEBP"
+            )
+            return
+
+        with open(file_path, "rb") as f:
+            file_data = f.read()
+
+        source = {
+            "type": "base64",
+            "data": base64.b64encode(file_data).decode("utf-8"),
+            "media_type": mime_type
+        }
+
+        file_type = SUPPORTED_FILE_TYPES[mime_type]
+        file_attachment = {
+            "type": file_type,
+            "source": source
+        }
+
+    file_attachment_used = False
+
     while True:
         print("\033[1;35mYou:\033[0m ", end="", flush=True)
         user_input_raw = await anyio.to_thread.run_sync(input)
         user_query = user_input_raw.strip()
 
         if user_query.lower() in {"exit", "quit"}:
-            console.print("\n[bold cyan]\U0001F44B Exiting chat.[/bold cyan]")
+            console.print("\n[bold cyan]👋 Exiting chat.[/bold cyan]")
             break
 
         if not user_query:
             continue
 
-        conversation_history.append({"role": "user", "content": user_query})
+        user_content = [{"type": "text", "text": user_query}]
+        if not file_attachment_used and file_attachment:
+            user_content.append(file_attachment)
+            file_attachment_used = True
+
+        conversation_history.append({"role": "user", "content": user_content})
 
         while True:
             try:
@@ -136,7 +181,7 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
                 )
             except Exception as e:
                 console.print(
-                    f"[bold red]\u274C LLM request failed:[/bold red] {e}")
+                    f"[bold red]❌ LLM request failed:[/bold red] {e}")
                 break
 
             assistant_response_content_blocks = []
@@ -145,7 +190,7 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
 
             if not response or not response.content:
                 console.print(
-                    "[bold red]\u26A0\ufe0f Empty response from LLM.[/bold red]")
+                    "[bold red]⚠️ Empty response from LLM.[/bold red]")
                 break
 
             for block in response.content:
@@ -173,7 +218,7 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
                     tool_use_id = tool_call["id"]
 
                     console.print(
-                        f"[bold yellow]\U0001F527 Calling tool '{tool_name}' with input:[/bold yellow] {tool_input}")
+                        f"[bold yellow]🔧 Calling tool '{tool_name}' with input:[/bold yellow] {tool_input}")
                     text_output = None
                     tool_output_content = None
                     is_error_flag = False
@@ -231,7 +276,7 @@ async def run_session(session: ClientSession, llm_config: LLMConfig):
             else:
                 if final_text_parts:
                     console.print(
-                        f"[bold green]\U0001F916 Claude:[/bold green] {' '.join(final_text_parts)}")
+                        f"[bold green]🤖 Claude:[/bold green] {' '.join(final_text_parts)}")
                     conversation_history.append(
                         {"role": "assistant", "content": assistant_response_content_blocks})
                 break
@@ -241,6 +286,8 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--llm_config", default="llm_config.json")
     parser.add_argument("--mcp_config", default="mcp_servers.json")
+    parser.add_argument(
+        "--file", help="Path to a file (PDF, image, etc.) to attach to the prompt.")
     args = parser.parse_args()
 
     try:
@@ -252,32 +299,32 @@ async def main():
             mcp_config = json.load(f)
     except Exception as e:
         console.print(
-            f"[bold red]\u274C Failed to load config files:[/bold red] {e}")
+            f"[bold red]❌ Failed to load config files:[/bold red] {e}")
         return
 
     mcp_servers = mcp_config.get("mcpServers", {})
     for server_name, server_data in mcp_servers.items():
         command = server_data.get("command")
-        args = server_data.get("args", [])
+        args_list = server_data.get("args", [])
         env = server_data.get("env", {})
 
         try:
-            params = StdioServerParameters(command=command, args=args, env=env)
+            params = StdioServerParameters(
+                command=command, args=args_list, env=env)
             async with stdio_client(params) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
-                    await run_session(session, llm_config)
+                    await run_session(session, llm_config, args)
                     break
         except Exception as e:
             console.print(
-                f"[bold red]\u274C Failed to start session with '{server_name}':[/bold red] {e}")
+                f"[bold red]❌ Failed to start session with '{server_name}':[/bold red] {e}")
             traceback.print_exc()
-
 
 if __name__ == "__main__":
     try:
         anyio.run(main)
     except* Exception as eg:
         console.print(
-            "[bold red]\n\U0001F6A8 Unhandled exception(s) occurred:[/bold red]")
+            "[bold red]\n🚨 Unhandled exception(s) occurred:[/bold red]")
         for ex in eg.exceptions:
             console.print(f"[red]- {type(ex).__name__}: {ex}[/red]")
