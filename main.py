@@ -7,11 +7,13 @@ import anthropic
 from dotenv import load_dotenv
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from jsonschema import validate, ValidationError
+from jsonschema import validate
 from rich.console import Console
 from rich.syntax import Syntax
 from rich import print as rprint
 import traceback
+from pydantic import BaseModel, model_validator, TypeAdapter
+from typing import Literal, Union
 
 load_dotenv()
 
@@ -25,9 +27,37 @@ logger = logging.getLogger("python_mcp_client")
 console = Console()
 
 
-async def run_session(session: ClientSession, llm_config: dict):
+class BaseLLMConfig(BaseModel):
+    provider: Literal["anthropic", "vertexAnthropic"]
+    model: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_provider_fields(cls, values):
+        provider = values.get("provider")
+        if provider == "vertexAnthropic":
+            if not values.get("project_id") or not values.get("location"):
+                raise ValueError(
+                    "vertexAnthropic requires project_id and location")
+        return values
+
+
+class AnthropicConfig(BaseLLMConfig):
+    provider: Literal["anthropic"]
+
+
+class VertexAnthropicConfig(BaseLLMConfig):
+    provider: Literal["vertexAnthropic"]
+    project_id: str
+    location: str
+
+
+LLMConfig = Union[AnthropicConfig, VertexAnthropicConfig]
+
+
+async def run_session(session: ClientSession, llm_config: LLMConfig):
     console.print(
-        "[bold cyan]\n💬 Chat started! Type 'exit' or 'quit' to leave.\n[/bold cyan]")
+        "[bold cyan]\n\U0001F4AC Chat started! Type 'exit' or 'quit' to leave.\n[/bold cyan]")
 
     logger.info("Initializing MCP session...")
     await session.initialize()
@@ -37,7 +67,7 @@ async def run_session(session: ClientSession, llm_config: dict):
 
     if not results or not hasattr(results, 'tools') or not results.tools:
         console.print(
-            "[bold red]❌ No tools found on the MCP server or results format unexpected. Cannot proceed.[/bold red]")
+            "[bold red]\u274C No tools found on the MCP server or results format unexpected. Cannot proceed.[/bold red]")
         return
 
     processed_tools = []
@@ -56,27 +86,35 @@ async def run_session(session: ClientSession, llm_config: dict):
 
     if not processed_tools:
         console.print(
-            "[bold red]❌ No valid tools to process. Exiting.[/bold red]")
+            "[bold red]\u274C No valid tools to process. Exiting.[/bold red]")
         return
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        console.print(
-            "[bold red]❌ Missing ANTHROPIC_API_KEY environment variable.[/bold red]")
-        return
+    if llm_config.provider == "anthropic":
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            console.print(
+                "[bold red]\u274C Missing ANTHROPIC_API_KEY.[/bold red]")
+            return
+        client = anthropic.AsyncAnthropic(api_key=api_key)
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-    model = llm_config.get("model", "claude-3-haiku-20240307")
+    elif llm_config.provider == "vertexAnthropic":
+        from anthropic import AsyncAnthropicVertex
+        client = AsyncAnthropicVertex(
+            project_id=llm_config.project_id,
+            location=llm_config.location,
+        )
+
+    model = llm_config.model
     conversation_history = []
 
     while True:
-        # Using raw print to avoid Rich error
         print("\033[1;35mYou:\033[0m ", end="", flush=True)
         user_input_raw = await anyio.to_thread.run_sync(input)
         user_query = user_input_raw.strip()
 
         if user_query.lower() in {"exit", "quit"}:
-            console.print("\n[bold cyan]👋 Exiting chat.[/bold cyan]")
+            console.print("\n[bold cyan]\U0001F44B Exiting chat.[/bold cyan]")
+            await session.shutdown()
             break
 
         if not user_query:
@@ -94,7 +132,7 @@ async def run_session(session: ClientSession, llm_config: dict):
                 )
             except Exception as e:
                 console.print(
-                    f"[bold red]❌ LLM request failed:[/bold red] {e}")
+                    f"[bold red]\u274C LLM request failed:[/bold red] {e}")
                 break
 
             assistant_response_content_blocks = []
@@ -103,7 +141,7 @@ async def run_session(session: ClientSession, llm_config: dict):
 
             if not response or not response.content:
                 console.print(
-                    "[bold red]⚠️ Empty response from LLM.[/bold red]")
+                    "[bold red]\u26A0\ufe0f Empty response from LLM.[/bold red]")
                 break
 
             for block in response.content:
@@ -131,7 +169,7 @@ async def run_session(session: ClientSession, llm_config: dict):
                     tool_use_id = tool_call["id"]
 
                     console.print(
-                        f"[bold yellow]🔧 Calling tool '{tool_name}' with input:[/bold yellow] {tool_input}")
+                        f"[bold yellow]\U0001F527 Calling tool '{tool_name}' with input:[/bold yellow] {tool_input}")
                     text_output = None
                     tool_output_content = None
                     is_error_flag = False
@@ -169,7 +207,7 @@ async def run_session(session: ClientSession, llm_config: dict):
                         result_block = {
                             "type": "tool_result",
                             "tool_use_id": tool_use_id,
-                            "content": f"Tool execution failed: {str(tool_output_content.get('error', 'Unknown error'))}"
+                            "content": f"Tool execution failed: {tool_output_content.get('error', 'Unknown error')}"
                         }
                     else:
                         json_str = json.dumps(tool_output_content, indent=2)
@@ -185,11 +223,11 @@ async def run_session(session: ClientSession, llm_config: dict):
 
                 conversation_history.append(
                     {"role": "user", "content": tool_result_messages})
-                continue  # Re-query LLM with tool results
+                continue
             else:
                 if final_text_parts:
                     console.print(
-                        f"[bold green]🤖 Claude:[/bold green] {' '.join(final_text_parts)}")
+                        f"[bold green]\U0001F916 Claude:[/bold green] {' '.join(final_text_parts)}")
                     conversation_history.append(
                         {"role": "assistant", "content": assistant_response_content_blocks})
                 break
@@ -203,12 +241,14 @@ async def main():
 
     try:
         with open(args.llm_config, "r") as f:
-            llm_config = json.load(f)
+            raw_llm_config = json.load(f)
+            llm_config = TypeAdapter(LLMConfig).validate_python(raw_llm_config)
+
         with open(args.mcp_config, "r") as f:
             mcp_config = json.load(f)
     except Exception as e:
         console.print(
-            f"[bold red]❌ Failed to load config files:[/bold red] {e}")
+            f"[bold red]\u274C Failed to load config files:[/bold red] {e}")
         return
 
     mcp_servers = mcp_config.get("mcpServers", {})
@@ -225,7 +265,7 @@ async def main():
                     break
         except Exception as e:
             console.print(
-                f"[bold red]❌ Failed to start session with '{server_name}':[/bold red] {e}")
+                f"[bold red]\u274C Failed to start session with '{server_name}':[/bold red] {e}")
             traceback.print_exc()
 
 
@@ -234,6 +274,6 @@ if __name__ == "__main__":
         anyio.run(main)
     except* Exception as eg:
         console.print(
-            "[bold red]\n🚨 Unhandled exception(s) occurred:[/bold red]")
+            "[bold red]\n\U0001F6A8 Unhandled exception(s) occurred:[/bold red]")
         for ex in eg.exceptions:
             console.print(f"[red]- {type(ex).__name__}: {ex}[/red]")

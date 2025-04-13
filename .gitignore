@@ -10,3 +10,6 @@ wheels/
 .venv
 temp.txt
 .env
+
+# VS Code settings
+.vscode/
