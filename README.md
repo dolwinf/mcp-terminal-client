@@ -14,6 +14,7 @@ Designed for developers building and testing tools via the MCP spec.
 - ✅ Validates tool inputs via JSON Schema
 - 🪵 Full structured logging and debugging
 - 🔁 Multi-turn conversation loop with memory
+- 📎 File Attachments for Images and PDF
 
 ---
 
