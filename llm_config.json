@@ -1,6 +1,4 @@
 {
-    "name": "Claude",
-    "provider": "anthropic",
-    "api_key": "",
-    "model": "claude-3-haiku-20240307"
+    "provider": "anthropic",    
+    "model": "claude-3-7-sonnet-20250219"
   }

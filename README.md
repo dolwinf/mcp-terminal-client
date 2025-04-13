@@ -1,120 +1,133 @@
-# MCP Terminal Client
+# 🖥️ MCP Terminal Chat Client
 
-A terminal chat MCP client for interacting with Model Context Protocol (MCP) servers. Currently supports Anthropic Claude.
+A terminal-based interactive chat client for communicating with Model Context Protocol (MCP) servers using Anthropic's Claude models.
 
-## Overview
+Designed for developers building and testing tools via the MCP spec.
 
-This client provides an interface between MCP tool servers and Anthropic's Claude language models, allowing for:
+---
 
-- Interactive command-line chat with Claude
-- Dynamic tool discovery from MCP servers
-- Automatic tool execution via Claude's function calling capabilities
-- Detailed logging
+## 💡 Features
 
-## Requirements
+- 🧑‍💻 Terminal chat interface with Claude
+- 🔍 Auto-discovers tools from an MCP server
+- 🧰 Executes Claude's `tool_use` calls live
+- ✅ Validates tool inputs via JSON Schema
+- 🪵 Full structured logging and debugging
+- 🔁 Multi-turn conversation loop with memory
+
+---
+
+## ⚙️ Requirements
 
 - Python 3.11+
-- `anthropic` Python package
-- `anyio` Python package
-- `mcp` Python package
+- MCP tool server (conforming to the spec)
+- `.env` file with Anthropic API key
 
-## Configuration
+### 📦 Python Packages
 
-The client requires two configuration files:
+Install with `uv` (recommended) or `pip`:
 
-### 1. `llm_config.json`
+```bash
+uv pip install -r requirements.txt
+# or
+pip install -r requirements.txt
+```
 
-Contains Anthropic API credentials and model selection:
+Dependencies:
+- `anthropic`
+- `anyio`
+- `mcp`
+- `python-dotenv`
+- `jsonschema`
+
+---
+
+## 🧾 Configuration
+
+### 🔑 `llm_config.json`
 
 ```json
 {
-  "api_key": "your_anthropic_api_key",
+  "provider": "anthropic",
   "model": "claude-3-haiku-20240307"
 }
 ```
 
-### 2. `mcp_servers.json`
-
-Defines available MCP servers:
+### ⚙️ `mcp_servers.json`
 
 ```json
 {
   "mcpServers": {
     "default": {
-      "command": "/path/to/mcp_server",
-      "args": ["--option1", "value1"],
+      "command": "python",
+      "args": ["-m", "your_mcp_tool_server"],
       "env": {
-        "ENV_VAR1": "value1"
+        "MY_ENV_VAR": "value"
       }
-    },
-    "alternative": {
-      "command": "/path/to/another_server",
-      "args": [],
-      "env": {}
     }
   }
 }
 ```
 
-## Usage
+### 🔐 `.env`
 
-Ensure uv is installed to installed packages:
-
-```bash
-pip install uv
-```
-Create virtual env and install dependencies:
-
-```bash
-source .venv/bin/activate # Unix/macOS
-# OR
-.venv\Scripts\activate  # Windows
-uv pip install --requirement pyproject.toml
+```env
+ANTHROPIC_API_KEY=your-api-key-here
 ```
 
-Run the client with default configuration files:
+---
+
+## 🧪 Usage
+
+Run with default config:
 
 ```bash
 python main.py
 ```
 
-Specify custom configuration paths:
+Custom configs:
 
 ```bash
 python main.py --llm_config custom_llm_config.json --mcp_config custom_mcp_servers.json
 ```
 
-## Features
+---
 
-### Tool Integration
+## 💬 Conversation Flow
 
-- Automatic discovery of available tools from MCP servers
-- JSON schema validation for tool inputs
-- Structured handling of tool results
+1. You send a prompt in terminal
+2. Claude replies with text or `tool_use` blocks
+3. MCP client validates and calls the appropriate tool
+4. Tool results are returned to Claude
+5. Claude completes the response
 
-## Conversation Flow
+> All without leaving your terminal.
 
-1. User enters a query
-2. Query is sent to Claude with available tools
-3. Claude responds with text and/or tool use requests
-4. Tool requests are executed via MCP server
-5. Tool results are sent back to Claude
-6. Claude provides final response
+---
 
-## Troubleshooting
+## 🛠 Tool Handling
 
-If you encounter issues:
+- Tools are discovered via `tools/list`
+- Input schemas are parsed and validated
+- Tool outputs must return a string (per Claude API)
+- Errors are passed back as strings with `content`
 
-1. Check the log output (set to DEBUG level by default)
-2. Verify MCP server is running and accessible
-3. Confirm your Anthropic API key is valid
-4. Inspect tool configurations in the MCP server
+---
 
+## 🐛 Troubleshooting
 
-# TODO
+- Make sure `ANTHROPIC_API_KEY` is in `.env`
+- Set log level to `DEBUG` for full trace
+- If Claude throws 400 errors:
+  - Ensure `tool_result.content` is a **string**
+  - Validate tool inputs match declared schema
 
-1. Support for VertexAI, OpenAI
-2. Organise code to make the client vendor agnostic
-3. Add ruff
-4. Add test cases
-5. Add SSE support
+---
+
+## 📌 TODO
+
+- [ ] Support OpenAI, VertexAI
+- [ ] Vendor-agnostic LLM integration
+- [ ] SSE support
+- [ ] Packaging
+- [ ] Add tests and CLI improvements
