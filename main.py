@@ -49,9 +49,9 @@ class BaseLLMConfig(BaseModel):
     def validate_provider_fields(cls, values):
         provider = values.get("provider")
         if provider == "vertexAnthropic":
-            if not values.get("project_id") or not values.get("location"):
+            if not values.get("project_id") or not values.get("region"):
                 raise ValueError(
-                    "vertexAnthropic requires project_id and location")
+                    "vertexAnthropic requires project_id and region")
         return values
 
 
@@ -62,7 +62,7 @@ class AnthropicConfig(BaseLLMConfig):
 class VertexAnthropicConfig(BaseLLMConfig):
     provider: Literal["vertexAnthropic"]
     project_id: str
-    location: str
+    region: str
 
 
 LLMConfig = Union[AnthropicConfig, VertexAnthropicConfig]
@@ -113,7 +113,7 @@ async def run_session(session: ClientSession, llm_config: LLMConfig, args):
         from anthropic import AsyncAnthropicVertex
         client = AsyncAnthropicVertex(
             project_id=llm_config.project_id,
-            location=llm_config.location,
+            region=llm_config.region,
         )
 
     model = llm_config.model
